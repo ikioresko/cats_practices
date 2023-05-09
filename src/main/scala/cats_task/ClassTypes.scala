@@ -1,4 +1,4 @@
-package main.scala.cats
+package cats_task
 
 class ClassTypes {
 }
