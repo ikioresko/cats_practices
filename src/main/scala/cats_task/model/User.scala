@@ -1,10 +1,10 @@
-package cats_task.http4s_example
+package cats_task.model
 
 import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 
-case class User(login: String, firstName: String) {
-}
+
+case class User(name: String) extends AnyVal
 
 object User {
   implicit val fooDecoder: Decoder[User] = deriveDecoder[User]
