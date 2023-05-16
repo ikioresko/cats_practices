@@ -19,42 +19,40 @@ object ConcurrentSharedState extends IOApp {
                        purchase: List[Purchase]
                      )
 
-  def loadName(id: Long): IO[String] = {
-    IO.println(s"Loading name for customer $id") *>
+  def loadName(id: Long)(ref: Ref[IO, List[String]]): IO[String] =
+    ref.update(logs => s"Loading name for customer $id" :: logs) *>
     IO.pure(s"Customer $id")
-  }
 
-  def loadAccounts(id: Long): IO[List[Account]] = {
-    IO.println(s"Loading Account for customer $id") *>
+  def loadAccounts(id: Long)(ref: Ref[IO, List[String]]): IO[List[Account]] =
+    ref.update(logs => s"Loading Account for customer $id" :: logs) *>
     IO.pure(List(Account()))
-  }
 
-  def loadActivities(id: Long): IO[List[Activity]] = {
-    IO.println(s"Loading Activity for customer $id") *>
+  def loadActivities(id: Long)(ref: Ref[IO, List[String]]): IO[List[Activity]] =
+    ref.update(logs => s"Loading Activity for customer $id" :: logs) *>
     IO.pure(List(Activity()))
 
-  }
 
-  def loadPurchases(id: Long): IO[List[Purchase]] = {
-    IO.println(s"Loading Purchase for customer $id") *>
+  def loadPurchases(id: Long)(ref: Ref[IO, List[String]]): IO[List[Purchase]] =
+    ref.update(logs => s"Loading Purchase for customer $id" :: logs) *>
     IO.pure(List(Purchase()))
-  }
 
-  def loadCustomer(id: Long): IO[Customer] = (
-    loadName(id),
-    loadAccounts(id),
-    loadActivities(id),
-    loadPurchases(id)
+  def loadCustomer(id: Long)(ref: Ref[IO, List[String]]): IO[Customer] = (
+    loadName(id)(ref),
+    loadAccounts(id)(ref),
+    loadActivities(id)(ref),
+    loadPurchases(id)(ref)
     ).parMapN { case (name, accounts, activities, purchases) =>
     Customer(id, name, accounts, activities, purchases)
   }
 
   override def run(args: List[String]): IO[ExitCode] = {
-    List(2L, 5L, 10L)
-      .traverse(loadCustomer)
-      .flatTap(IO.println)
-      .as(ExitCode.Success)
+    Ref.of[IO, List[String]](Nil).flatMap{ref =>
+      List(2L, 5L, 10L)
+        .parTraverse(id => loadCustomer(id)(ref))
+        .flatTap(_ => ref.get.flatTap(logs => IO.println(logs.mkString("\n"))))
+        .flatTap(IO.println)
+        .as(ExitCode.Success)
+    }
 
-//    loadCustomer(0
   }
 }
