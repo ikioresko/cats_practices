@@ -9,11 +9,11 @@ object DeferredApp extends IOApp {
   case class Item(id: Long)
 
   def loadItems(): IO[List[Item]] = {
-        IO.raiseError(new Exception("Failed to load items"))
-//    IO.println("Loading items") *>
-//      IO.sleep(2.seconds) *>
-//      IO.println("loading done")
-//        .as(List(Item(1), Item(2)))
+    //    IO.raiseError(new Exception("Failed to load items"))
+    IO.println("Loading items") *>
+      IO.sleep(2.seconds) *>
+      IO.println("loading done")
+        .as(List(Item(1), Item(2)))
   }
 
   def initUI(): IO[Unit] = {
@@ -38,16 +38,22 @@ object DeferredApp extends IOApp {
   //      .flatten
   //      .handleError(_ => showError())
   //  }
-  def handleUI(defItems: Deferred[IO, List[Item]]) = {
-    initUI() *> defItems.get.flatMap { items => showItems(items) }
+  def handleUI(defItems: Deferred[IO, Either[Throwable, List[Item]]]) = {
+    initUI() *> defItems.get.flatMap {
+      case Right(items) => showItems(items)
+      case Left(e) => showError()
+    }
   }
 
-  def handleItems(defItems: Deferred[IO, List[Item]]) = {
-    loadItems().flatMap(items => defItems.complete(items)).void
+  def handleItems(defItems: Deferred[IO, Either[Throwable, List[Item]]]) = {
+    loadItems()
+      .flatMap(items => defItems.complete(Right(items)))
+      .handleErrorWith(e => defItems.complete(Left(e)))
+      .void
   }
 
   def setupUI(): IO[Unit] = {
-    Deferred[IO, List[Item]].flatMap { defItems =>
+    Deferred[IO, Either[Throwable, List[Item]]].flatMap { defItems =>
       List(handleUI(defItems), handleItems(defItems)).parSequence_
     }
   }
