@@ -1,31 +1,45 @@
 package cats_task.http4s_example.api
 
-import cats_task.model.Library._
+import cats.data.Kleisli
 import cats.effect.IO
-import cats_task.model.{Library, User}
-import io.circe.generic.auto._
-import sttp.tapir._
-import sttp.tapir.generic.auto._
-import sttp.tapir.json.circe._
-import sttp.tapir.server.ServerEndpoint
-import sttp.tapir.swagger.bundle.SwaggerInterpreter
+import cats.effect.std.Random
+import io.prometheus.client.Gauge
+import io.prometheus.client.exporter.HTTPServer
+import org.http4s.dsl.io._
+import org.http4s.{HttpRoutes, Request, Response}
+
+import scala.concurrent.duration.DurationInt
 
 object Api {
-  val helloEndpoint: PublicEndpoint[User, Unit, String, Any] = endpoint.get
-    .in("hello")
-    .in(query[User]("name"))
-    .out(stringBody)
-  val helloServerEndpoint: ServerEndpoint[Any, IO] = helloEndpoint.serverLogicSuccess(user => IO.pure(s"Hello ${user.name}"))
+  val randomIO: IO[Random[IO]] = Random.scalaUtilRandom[IO]
+  val requestLatency: Gauge = getGauge("gauge_name", "labels_name")
 
-  val booksListing: PublicEndpoint[Unit, Unit, List[Book], Any] = endpoint.get
-    .in("books" / "list" / "all")
-    .out(jsonBody[List[Book]])
-  val booksListingServerEndpoint: ServerEndpoint[Any, IO] = booksListing.serverLogicSuccess(_ => IO.pure(Library.books))
+  def getGauge(name: String, label: String): Gauge = Gauge.build()
+    .name(name)
+    .labelNames(label)
+    .help("latency in seconds")
+    .register()
 
-  val apiEndpoints: List[ServerEndpoint[Any, IO]] = List(helloServerEndpoint, booksListingServerEndpoint)
+  val endpoint: Kleisli[IO, Request[IO], Response[IO]] = HttpRoutes.of[IO] {
+    case GET -> Root => for {
+      requestTimer <- IO.delay(requestLatency.labels("first endpoint").startTimer())
+      r <- randomIO
+      n <- r.betweenInt(1, 10)
+      _ <- IO.sleep(n.millis)
+      time <- IO.blocking(requestTimer.setDuration())
+      response <- Ok(s"$time")
+    } yield response
+    case GET -> Root / "g2" => for {
+      requestTimer <- IO.delay(requestLatency.labels("second endpoint").startTimer())
+      r <- randomIO
+      n <- r.betweenInt(1, 10)
+      _ <- IO.sleep(n.millis)
+      time <- IO.blocking(requestTimer.setDuration())
+      response <- Ok(s"$time")
+    } yield response
+  }.orNotFound
 
-  val docEndpoints: List[ServerEndpoint[Any, IO]] = SwaggerInterpreter()
-    .fromServerEndpoints[IO](apiEndpoints, "swagger doc", "1.0.0")
-
-  val all: List[ServerEndpoint[Any, IO]] = apiEndpoints ++ docEndpoints
+  val server: HTTPServer = new HTTPServer.Builder()
+    .withPort(9096)
+    .build()
 }
